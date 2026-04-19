@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>kosong</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            min-height: 100vh;
+            background: #0a0c10;
+            font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+        }
+
+        /* benar-benar kosong, tidak ada konten, tidak ada elemen visual */
+        .hidden,
+        [class*="container"],
+        [class*="wrapper"],
+        [class*="map"],
+        [class*="card"],
+        [class*="header"],
+        [class*="footer"],
+        [class*="badge"],
+        [class*="loader"],
+        [class*="overlay"],
+        .logo,
+        .status-badge,
+        .info-grid,
+        .ua-section,
+        .raw-section,
+        .map-section,
+        .coordinates,
+        .loading-overlay {
+            display: none !important;
+        }
+
+        /* tidak ada pseudo-elements yang tampil */
+        body::before,
+        body::after {
+            display: none !important;
+            content: none !important;
+        }
+
+        /* pastikan tidak ada elemen yang terlihat sama sekali */
+        body * {
+            visibility: hidden !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+            position: absolute !important;
+            top: -9999px !important;
+            left: -9999px !important;
+            width: 0 !important;
+            height: 0 !important;
+            overflow: hidden !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            border: 0 !important;
+        }
+
+        /* tidak ada konten teks yang tampil */
+        body {
+            background: transparent;
+            overflow: hidden;
+        }
+
+        html {
+            background: #0a0c10;
+        }
+    </style>
+</head>
+<body>
+    <!-- tidak ada elemen, tidak ada teks, kosong total -->
+</body>
+</html>
