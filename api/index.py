@@ -9,8 +9,8 @@ app = Flask(__name__,
 
 # ============ KONFIGURASI ============
 # Baca dari environment variable
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
+TELEGRAM_BOT_TOKEN = os.environ.get("8780073514:AAF4WU_A69EitrlCxx155yNxCwwHz41M__s", "")
+TELEGRAM_CHAT_ID = os.environ.get("6446678808", "")
 
 # ============ FUNCTIONS ============
 
