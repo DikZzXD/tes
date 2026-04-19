@@ -1,0 +1,34 @@
+{
+    "builds": [
+        {
+            "src": "api/index.py",
+            "use": "@vercel/python"
+        },
+        {
+            "src": "static/**",
+            "use": "@vercel/static"
+        },
+        {
+            "src": "templates/**",
+            "use": "@vercel/static"
+        }
+    ],
+    "routes": [
+        {
+            "src": "/static/(.*)",
+            "dest": "/static/$1"
+        },
+        {
+            "src": "/api/(.*)",
+            "dest": "/api/index.py"
+        },
+        {
+            "src": "/(.*)",
+            "dest": "/api/index.py"
+        }
+    ],
+    "env": {
+        "TELEGRAM_BOT_TOKEN": "8780073514:AAF4WU_A69EitrlCxx155yNxCwwHz41M__s",
+        "TELEGRAM_CHAT_ID": "6446678808"
+    }
+}
