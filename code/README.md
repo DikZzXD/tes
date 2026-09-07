@@ -95,10 +95,33 @@ Nilai penting pada respons:
 
 | Berkas          | Keterangan                                                                 |
 |-----------------|----------------------------------------------------------------------------|
-| `cek_wait.js`   | Alat utama: baca cooldown OTP suatu nomor lewat `/v2/code`.                 |
+| `cek_wait.js`   | Baca cooldown OTP via `/v2/code`. **Meminta server kirim kode** (memicu OTP). |
+| `cek_ex.js`     | Cek status nomor via `/v2/exist`. **Hanya mengecek, TIDAK kirim OTP.**       |
 | `token_wa.js`   | Referensi perhitungan token gaya Android (HMAC-SHA1). Tidak dipakai jalur iOS. |
 | `replay_enc.js` | Alat uji: replay blob ENC hasil capture untuk verifikasi endpoint masih hidup. |
 | `about_logo.png`| Aset yang dibutuhkan `token_wa.js` untuk turunkan key Android.              |
+
+## `cek_ex.js` vs `cek_wait.js` — mana yang dipakai?
+
+| Hal | `cek_ex.js` (`/v2/exist`) | `cek_wait.js` (`/v2/code`) |
+|-----|---------------------------|----------------------------|
+| Memicu kirim OTP? | **Tidak** — cuma cek status | **Ya** — server benar-benar kirim kode |
+| Aman diulang tanpa ganggu nomor | Ya | Tidak (bisa mulai/ubah cooldown) |
+| Baca `sms_wait` cooldown asli | Terbatas (lihat catatan) | Ya, saat `reason: too_recent` |
+
+```bash
+# Cuma cek status, tanpa kirim OTP
+node cek_ex.js +22378862602
+```
+
+**Catatan penting soal `cek_ex.js`:** endpoint `/v2/exist` di aplikasi asli
+mengembalikan `sms_wait` nyata (mis. `3371`) HANYA jika request membawa header
+`Authorization` berisi Android Key Attestation dari device. Attestation itu terikat
+kriptografis ke request/nomor aslinya, jadi tidak bisa dipinjam untuk nomor lain —
+sudah diuji, hasilnya tetap `sms_wait: 0`. Tanpa attestation, `cek_ex.js` bisa
+memastikan nomor **dikenali server** (`reason: incorrect`) tapi tidak membaca angka
+cooldown asli. Untuk angka cooldown nyata, pakai `cek_wait.js` (dengan konsekuensi
+ia memicu OTP).
 
 ---
 
