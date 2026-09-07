@@ -27,11 +27,32 @@ const signedPreKey = (idk) => {
   return { keyPair: preKey, signature: sign(idk.private, pubKeySignal(preKey.public)) }
 }
 
+// Pisah kode negara + nomor lokal. Utamakan library `phone`, tapi library ini
+// suka nolak nomor yang sebenernya aktif di WA (validasi panjang/prefix-nya ketat).
+// Kalau dia bilang invalid, JANGAN langsung berhenti: fallback parse manual biar
+// server WhatsApp yang jadi wasit valid/tidaknya. Bisa juga paksa lewat env WA_CC.
+const pisahNomor = (raw) => {
+  const digits = raw.replace(/\D/g, '')
+  const hasil = phone('+' + digits)
+  if (hasil.isValid) {
+    const cc = hasil.countryCode.replace('+', '')
+    return { cc, nomor: hasil.phoneNumber.replace(hasil.countryCode, ''), sumber: 'phone' }
+  }
+  // Fallback manual: pakai WA_CC kalau ada, kalau nggak tebak 1-3 digit pertama.
+  const ccEnv = (process.env.WA_CC || '').replace(/\D/g, '')
+  if (ccEnv && digits.startsWith(ccEnv)) {
+    return { cc: ccEnv, nomor: digits.slice(ccEnv.length), sumber: 'WA_CC' }
+  }
+  const cc = digits.slice(0, 3)
+  return { cc, nomor: digits.slice(cc.length), sumber: 'tebakan (set WA_CC utk pasti)' }
+}
+
 const cek = async (number, method = 'sms') => {
-  number = phone('+' + number.replace(/\D/g, ''))
-  if (!number.isValid) return { status: 'invalid', reason: 'nomor tidak valid' }
-  const cc = number.countryCode.replace('+', '')
-  const nomor = number.phoneNumber.replace(number.countryCode, '')
+  const digits = number.replace(/\D/g, '')
+  if (digits.length < 8) return { status: 'invalid', reason: 'nomor kependekan' }
+  const { cc, nomor, sumber } = pisahNomor(number)
+  if (!cc || !nomor) return { status: 'invalid', reason: 'gagal pisah kode negara' }
+  if (process.env.WA_DEBUG) console.log(`[debug] cc=${cc} nomor=${nomor} (via ${sumber})`)
 
   const identityKey = buatKeyPair()
   const noiseKey = buatKeyPair()
@@ -72,6 +93,15 @@ const fmt = (d) => {
   const r = await cek(nomor, method)
   console.log('Nomor  :', nomor, '| versi:', WA_VERSION, '| method:', method)
   console.log('Respons:', JSON.stringify(r, null, 2))
+  const artiReason = {
+    too_recent: 'Nomor baru saja minta OTP, sedang cooldown (ini yang kita cari).',
+    no_routes: 'Server gak punya rute kirim OTP ke nomor ini (format/operator gak dikenali).',
+    blocked: 'Request/IP diblokir server. Ganti IP, jangan spam.',
+    old_version: 'WA_VERSION terlalu lama, setel versi lebih baru.',
+    bad_token: 'Token gak cocok dengan versi. Samakan WA_VERSION.',
+    incorrect: 'Nomor dianggap belum terdaftar / format salah.',
+  }
+  if (r.reason && artiReason[r.reason]) console.log('Catatan:', artiReason[r.reason])
   if (typeof r.sms_wait === 'number') {
     console.log('---')
     console.log('sms_wait   :', fmt(r.sms_wait))

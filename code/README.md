@@ -42,6 +42,9 @@ node cek_wait.js +22378862602 voice
 
 # Paksa pakai versi WhatsApp tertentu (token harus cocok dengan versi ini)
 WA_VERSION=2.26.33.73 node cek_wait.js +22378862602
+
+# Paksa kode negara kalau nomornya ditolak parser otomatis (lihat catatan di bawah)
+WA_CC=223 node cek_wait.js +22392909522
 ```
 
 ### Contoh Keluaran
@@ -104,9 +107,26 @@ Nilai penting pada respons:
 | `reason`      | Penjelasan                                                        |
 |---------------|-------------------------------------------------------------------|
 | `too_recent`  | Nomor baru saja minta OTP; sedang cooldown. Lihat `sms_wait`.     |
+| `no_routes`   | Server tidak punya rute kirim OTP ke nomor ini (format/operator tak dikenali). Sering muncul juga saat IP-mu sedang di-rem server (semua nomor balas `3600`). |
 | `blocked`     | Request/IP dibatasi server. Coba dari IP lain, jangan spam.       |
 | `old_version` | `WA_VERSION` terlalu lama. Setel versi yang lebih baru.           |
 | `bad_token`   | Token tidak cocok dengan versi. Pastikan `WA_VERSION` selaras.    |
+
+## Kalau nomor ditolak "nomor tidak valid" / `WA_CC`
+
+Parser nomor (`phone`) kadang menolak nomor yang sebenarnya aktif di WhatsApp
+karena aturan panjang/prefix negaranya ketat. Script tidak lagi berhenti di situ:
+kalau parser gagal, ia jatuh ke tebakan kode negara 1-3 digit pertama supaya
+request tetap dikirim dan server WhatsApp yang menilai. Untuk memastikan pemisahan
+kode negara benar, set `WA_CC` (contoh Mali `+223` → `WA_CC=223`). Pakai `WA_DEBUG=1`
+untuk melihat bagaimana nomor dipisah.
+
+## Bedanya `too_recent` vs `3600` seragam
+
+Kalau `sms_wait`, `voice_wait`, dan `retry_after` semuanya persis `3600` dengan
+`reason: no_routes`, itu biasanya **IP-mu sedang di-rem server**, bukan cooldown
+asli nomor. Cooldown asli terlihat sebagai `reason: too_recent` dengan angka yang
+spesifik dan terus berkurang antar pengecekan. Coba dari IP/HP lain bila kena `3600`.
 
 ---
 
