@@ -12,6 +12,7 @@
   "type": "commonjs",
   "dependencies": {
     "curve25519-js": "^0.0.4",
-    "phone": "^3.1.72"
+    "phone": "^3.1.72",
+    "undici": "^8.10.2"
   }
 }
