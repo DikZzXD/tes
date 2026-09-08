@@ -65,17 +65,19 @@ WA_USE_PROXY=1 node cek_wait.js +22378862602
 ```
 
 ```bash
-# Mode 3 (PALING ANDAL): proxy residential OwlProxy dari file
-WA_OWL=1 node cek_wait.js +22378862602
+# Mode 3 (DEFAULT & PALING ANDAL): proxy residential OwlProxy
+# sudah otomatis -- file code/owl_proxies.txt berisi daftar proxy valid
+node cek_wait.js +22378862602
 ```
 
-**Mode 3 sangat disarankan.** Isi `code/owl_proxies.txt` dengan daftar proxy OwlProxy
-(satu URI per baris, format `socks5://user:pass@change4.owlproxy.com:7778` atau
-`http://...`). Script otomatis mengubah `socks5://` → `http://` (OwlProxy melayani
-kedua protokol di port sama, dan undici cuma mendukung HTTP proxy). Karena ini IP
-residential asli, biasanya **proxy pertama langsung dapat data asli dalam 2-5 detik** —
-jauh lebih cepat & konsisten dari proxy publik. File ini di-`.gitignore` (berisi
-kredensial, jangan di-commit). Override path lewat `WA_OWL_FILE`.
+**Mode 3 adalah default.** `code/owl_proxies.txt` berisi daftar proxy OwlProxy
+residential yang sudah disaring valid (satu URI per baris, format
+`socks5://user:pass@change4.owlproxy.com:7778` atau `http://...`). Script otomatis
+mengubah `socks5://` → `http://` (OwlProxy melayani kedua protokol di port sama,
+dan undici cuma mendukung HTTP proxy). Karena IP-nya residential asli, biasanya
+**proxy pertama langsung dapat data asli dalam 2-5 detik** — jauh lebih cepat &
+konsisten dari proxy publik. Matikan dengan `WA_OWL=0`, atau ganti file dengan
+`WA_OWL_FILE`. File berisi kredensial; jangan sebarkan di luar repo privat.
 
 Env tambahan untuk mode auto:
 
@@ -84,7 +86,7 @@ Env tambahan untuk mode auto:
 | `WA_PROXY_POOL`   | `300`   | Berapa proxy mentah diambil dari GitHub per putaran        |
 | `WA_PROXY_LEBAR`  | `50`    | Berapa proxy ditembak ke WhatsApp berbarengan (kolam alir) |
 | `WA_PROXY_PUTARAN`| `3`     | Maks putaran ulang dgn proxy baru kalau batch jelek        |
-| `WA_OWL`          | —       | Aktifkan mode OwlProxy residential (baca `owl_proxies.txt`) |
+| `WA_OWL`          | `1`     | Aktifkan mode OwlProxy (default). `0` utk matikan             |
 | `WA_OWL_FILE`     | `owl_proxies.txt` | Path file daftar proxy OwlProxy                   |
 | `WA_DEBUG`        | —       | Tampilkan tiap percobaan proxy                             |
 
@@ -155,6 +157,7 @@ Nilai penting pada respons:
 | `cek_ex.js`     | Cek status nomor via `/v2/exist`. **Hanya mengecek, TIDAK kirim OTP.**       |
 | `token_wa.js`   | Referensi perhitungan token gaya Android (HMAC-SHA1). Tidak dipakai jalur iOS. |
 | `replay_enc.js` | Alat uji: replay blob ENC hasil capture untuk verifikasi endpoint masih hidup. |
+| `owl_proxies.txt` | Daftar proxy residential OwlProxy valid (dipakai otomatis). Berisi kredensial. |
 | `about_logo.png`| Aset yang dibutuhkan `token_wa.js` untuk turunkan key Android.              |
 
 ## `cek_ex.js` vs `cek_wait.js` — mana yang dipakai?

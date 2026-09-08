@@ -1,5 +1,4 @@
 node_modules/
 __pycache__/
 *.log
-owl_proxies.txt
 owl.json
