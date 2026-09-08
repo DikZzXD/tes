@@ -66,14 +66,21 @@ WA_USE_PROXY=1 node cek_wait.js +22378862602
 
 Env tambahan untuk mode auto:
 
-| Env              | Default | Guna                                                  |
-|------------------|---------|-------------------------------------------------------|
-| `WA_PROXY_POOL`  | `200`   | Berapa proxy mentah diambil dari GitHub               |
-| `WA_PROXY_HIDUP` | `8`     | Berapa proxy hidup yang dikumpulkan sebelum hit WA    |
-| `WA_DEBUG`       | —       | Tampilkan proses saring & tiap percobaan proxy        |
+| Env               | Default | Guna                                                       |
+|-------------------|---------|------------------------------------------------------------|
+| `WA_PROXY_POOL`   | `300`   | Berapa proxy mentah diambil dari GitHub per putaran        |
+| `WA_PROXY_LEBAR`  | `50`    | Berapa proxy ditembak ke WhatsApp berbarengan (kolam alir) |
+| `WA_PROXY_PUTARAN`| `3`     | Maks putaran ulang dgn proxy baru kalau batch jelek        |
+| `WA_DEBUG`        | —       | Tampilkan tiap percobaan proxy                             |
 
-Catatan: proxy publik gratis mayoritas **mati/lambat**, jadi mode auto bisa perlu
-1-3 menit dan tidak dijamin dapat. Kalau butuh andal, sediakan `WA_PROXY` sendiri.
+Mode auto pakai **kolam mengalir (streaming pool)**: menembak WhatsApp lewat puluhan
+proxy sekaligus dan **menang segera** saat ada yang balas cooldown asli — tidak nunggu
+proxy mati timeout satu-satu. Biasanya dapat dalam ~15-30 detik kalau ada proxy bersih
+di batch itu. Kalau satu putaran gagal (semua proxy mati/di-rem), ia otomatis ulang
+dengan proxy acak baru sampai `WA_PROXY_PUTARAN` habis.
+
+Catatan: proxy publik gratis tidak deterministik — kadang satu putaran langsung dapat,
+kadang perlu 2-3 putaran. Kalau butuh andal/cepat pasti, sediakan `WA_PROXY` sendiri.
 Setiap request juga otomatis memakai **User-Agent device iOS acak** (model iPhone +
 versi iOS diacak) supaya fingerprint tidak selalu identik.
 

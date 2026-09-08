@@ -167,6 +167,43 @@ const saringProxyHidup = async (daftar, target = 8) => {
   return hidup
 }
 
+// MODE CEPAT: kolam mengalir (streaming pool). Jalankan `lebar` request ke WhatsApp
+// lewat proxy berbarengan; tiap kali satu selesai (sukses/gagal), langsung isi ulang
+// dari antrian. Menang SEGERA saat ada proxy yang balas cooldown asli -- gak nunggu
+// gelombang penuh, jadi proxy mati gak nge-block yang lain.
+const cekBalapan = async (number, method, daftarProxy, lebar = 25) => {
+  const bagus = (r) => r && r.reason !== 'no_routes' && r.reason !== 'blocked' && r.status !== 'invalid' && typeof r.sms_wait === 'number'
+  let terakhir = null
+  let idx = 0
+  let selesai = false
+
+  return await new Promise((resolveAkhir) => {
+    let aktif = 0
+    const majukan = () => {
+      if (selesai) return
+      while (aktif < lebar && idx < daftarProxy.length) {
+        const px = daftarProxy[idx++]
+        aktif++
+        const dispatcher = new ProxyAgent(px)
+        cek(number, method, { dispatcher, timeout: 5000 })
+          .then((r) => {
+            if (process.env.WA_DEBUG) console.log(`[balap] ${px} -> ${r.reason || r.status}`)
+            terakhir = { ...r, _proxy: px }
+            if (bagus(r) && !selesai) { selesai = true; resolveAkhir({ ...r, _proxy: px }) }
+          })
+          .catch(() => {})
+          .finally(() => { aktif--; if (!selesai) majukan() })
+      }
+      // Semua proxy sudah dicoba dan gak ada yang aktif lagi -> balikin yang terakhir.
+      if (aktif === 0 && idx >= daftarProxy.length && !selesai) {
+        selesai = true
+        resolveAkhir(terakhir)
+      }
+    }
+    majukan()
+  })
+}
+
 const fmt = (d) => {
   // -1 dipakai server buat nandain method-nya lagi gak dibuka sama sekali (beda dari 0 = boleh sekarang)
   if (d < 0) return 'tidak tersedia (method dinonaktifkan server)'
@@ -194,15 +231,21 @@ const fmt = (d) => {
       r = { status: 'error', reason: 'proxy_gagal', detail: e.code || e.message }
     }
   } else if (process.env.WA_USE_PROXY) {
-    const poolSize = Number(process.env.WA_PROXY_POOL || 200)
-    process.stdout.write(`Ambil daftar proxy dari GitHub (pool ${poolSize})... `)
-    const daftar = await ambilProxyList(poolSize)
-    console.log(daftar.length + ' proxy mentah.')
-    process.stdout.write('Saring proxy yang hidup... ')
-    const hidup = await saringProxyHidup(daftar, Number(process.env.WA_PROXY_HIDUP || 8))
-    console.log(hidup.length + ' proxy hidup, mulai cek ke WhatsApp.')
-    r = await cekViaProxy(nomor, method, hidup)
-    if (r && r._proxy) infoProxy = 'proxy ' + r._proxy
+    const poolSize = Number(process.env.WA_PROXY_POOL || 300)
+    const lebar = Number(process.env.WA_PROXY_LEBAR || 50)
+    const maxPutaran = Number(process.env.WA_PROXY_PUTARAN || 3)
+    // Proxy publik gak deterministik: kadang batch-nya jelek semua. Ulang beberapa
+    // putaran dengan proxy acak baru sampai dapat data asli (too_recent/incorrect).
+    const asli = (x) => x && (x.reason === 'too_recent' || x.reason === 'incorrect')
+    for (let putaran = 1; putaran <= maxPutaran; putaran++) {
+      process.stdout.write(`[putaran ${putaran}/${maxPutaran}] ambil proxy (pool ${poolSize}), balapan ${lebar}... `)
+      const daftar = await ambilProxyList(poolSize)
+      console.log(daftar.length + ' proxy.')
+      const hasil = await cekBalapan(nomor, method, daftar, lebar)
+      if (hasil) { r = hasil; if (hasil._proxy) infoProxy = 'proxy ' + hasil._proxy }
+      if (asli(hasil)) break // dapat cooldown asli, stop
+      if (putaran < maxPutaran) console.log('  -> belum dapat data asli, ulang dengan proxy baru...')
+    }
     if (!r) r = { status: 'error', reason: 'semua_proxy_gagal' }
   } else {
     r = await cekLangsung(nomor, method)
@@ -229,12 +272,13 @@ const fmt = (d) => {
   }
 
   if (typeof r.sms_wait === 'number') {
-    // Deteksi placeholder rate-limit IP: semua field wait bernilai SAMA (biasanya 3600).
-    // Cooldown asli per-nomor selalu beda-beda antar method (lihat HAR: 3371 vs 2459 vs 0).
+    // Deteksi placeholder rate-limit IP: semua field wait bernilai SAMA (biasanya 3600)
+    // DAN reason-nya no_routes. Kalau reason=too_recent, itu cooldown asli walau angkanya
+    // kebetulan sama (mis. cooldown pendek 300 dtk) -- jangan kasih peringatan palsu.
     const waits = [r.sms_wait, r.voice_wait, r.flash_wait, r.email_otp_wait, r.send_sms_wait, r.wa_old_wait]
       .filter((v) => typeof v === 'number')
     const semuaSama = waits.length >= 3 && waits.every((v) => v === waits[0]) && waits[0] > 0
-    const kemungkinanRateLimit = semuaSama || r.reason === 'no_routes'
+    const kemungkinanRateLimit = r.reason === 'no_routes' || (semuaSama && r.reason !== 'too_recent' && r.reason !== 'incorrect')
 
     console.log('---')
     console.log('sms_wait   :', fmt(r.sms_wait))
@@ -243,9 +287,9 @@ const fmt = (d) => {
 
     if (kemungkinanRateLimit) {
       console.log('---')
-      console.log('PERINGATAN: semua field wait bernilai sama (' + waits[0] + ') / reason=' + r.reason + '.')
+      console.log('PERINGATAN: reason=' + r.reason + ' dengan field wait seragam.')
       console.log('Ini nilai placeholder rate-limit IP, BUKAN cooldown asli nomor tsb.')
-      console.log('Cooldown asli selalu beda antar method. Coba dari IP bersih non-datacenter.')
+      console.log('Coba dari IP bersih / pakai WA_USE_PROXY=1.')
     }
   }
 })()
