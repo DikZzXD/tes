@@ -96,16 +96,39 @@ const fmt = (d) => {
   const artiReason = {
     too_recent: 'Nomor baru saja minta OTP, sedang cooldown (ini yang kita cari).',
     no_routes: 'Server gak punya rute kirim OTP ke nomor ini (format/operator gak dikenali).',
-    blocked: 'Request/IP diblokir server. Ganti IP, jangan spam.',
+    blocked: 'Request/IP diblokir server (ban/abuse). Ganti IP, jangan spam.',
     old_version: 'WA_VERSION terlalu lama, setel versi lebih baru.',
     bad_token: 'Token gak cocok dengan versi. Samakan WA_VERSION.',
     incorrect: 'Nomor dianggap belum terdaftar / format salah.',
   }
   if (r.reason && artiReason[r.reason]) console.log('Catatan:', artiReason[r.reason])
+
+  // Kalau server balas ban/abuse, field wait-nya nggak ada -> jangan pura-pura punya cooldown.
+  if (r.status === 'fail' && (r.appeal_token || r.reason === 'blocked')) {
+    console.log('---')
+    console.log('HASIL TIDAK VALID: nomor/IP kena blokir server, bukan cooldown OTP.')
+    console.log('Cooldown asli nggak bisa dibaca dari IP ini. Pindah ke IP bersih (non-datacenter).')
+    return
+  }
+
   if (typeof r.sms_wait === 'number') {
+    // Deteksi placeholder rate-limit IP: semua field wait bernilai SAMA (biasanya 3600).
+    // Cooldown asli per-nomor selalu beda-beda antar method (lihat HAR: 3371 vs 2459 vs 0).
+    const waits = [r.sms_wait, r.voice_wait, r.flash_wait, r.email_otp_wait, r.send_sms_wait, r.wa_old_wait]
+      .filter((v) => typeof v === 'number')
+    const semuaSama = waits.length >= 3 && waits.every((v) => v === waits[0]) && waits[0] > 0
+    const kemungkinanRateLimit = semuaSama || r.reason === 'no_routes'
+
     console.log('---')
     console.log('sms_wait   :', fmt(r.sms_wait))
     console.log('voice_wait :', fmt(r.voice_wait))
     if (r.retry_after) console.log('retry_after:', fmt(r.retry_after))
+
+    if (kemungkinanRateLimit) {
+      console.log('---')
+      console.log('PERINGATAN: semua field wait bernilai sama (' + waits[0] + ') / reason=' + r.reason + '.')
+      console.log('Ini nilai placeholder rate-limit IP, BUKAN cooldown asli nomor tsb.')
+      console.log('Cooldown asli selalu beda antar method. Coba dari IP bersih non-datacenter.')
+    }
   }
 })()
