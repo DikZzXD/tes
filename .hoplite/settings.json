@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "scripts": {
+    "setup": "python3 -m venv .venv && .venv/bin/pip install -r requirements.txt",
+    "run": ".venv/bin/flask --app api.index run --host 0.0.0.0 --port 3000"
+  },
+  "ports": {
+    "default": 3000
+  }
+}
