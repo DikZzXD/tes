@@ -238,10 +238,11 @@ const fmt = (d) => {
   //   (kosong)                 -> langsung dari IP sandbox
   let r
   let infoProxy = 'langsung (tanpa proxy)'
-  const owl = process.env.WA_OWL ? muatOwlProxy() : []
+  // Default: pakai proxy residential OwlProxy dari owl_proxies.txt kalau ada.
+  // Ini jauh lebih andal dari proxy publik -- proxy pertama biasanya langsung
+  // dapat data asli. Matikan dgn WA_OWL=0, atau override path WA_OWL_FILE.
+  const owl = process.env.WA_OWL === '0' ? [] : muatOwlProxy()
   if (owl.length) {
-    // Prioritas: proxy residential OwlProxy. Jauh lebih andal dari proxy publik --
-    // biasanya proxy pertama langsung dapat data asli.
     const lebar = Number(process.env.WA_PROXY_LEBAR || 10)
     console.log(`Pakai OwlProxy residential: ${owl.length} proxy (balapan ${lebar})...`)
     r = await cekBalapan(nomor, method, owl, lebar)
