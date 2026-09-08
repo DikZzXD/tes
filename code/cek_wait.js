@@ -6,10 +6,50 @@
 const { randomBytes, randomUUID, createHash } = require('crypto')
 const { generateKeyPair, sign } = require('curve25519-js')
 const { phone } = require('phone')
+const { ProxyAgent, fetch } = require('undici')
+
+// PENTING: pakai `fetch` dari paket undici, BUKAN fetch global Node. ProxyAgent dari
+// paket ini punya interface handler yang beda dari undici bawaan Node -- kalau dipasang
+// sebagai dispatcher ke fetch global, error "invalid onRequestStart method".
 
 const WA_VERSION = process.env.WA_VERSION || '2.26.33.73'
-const UA = `WhatsApp/${WA_VERSION} iOS/17.5.1 Device/Apple-iPhone_13`
 const WA_SECRET = '0a1mLfGUIBVrMKF1RdvLI5lkRBvof6vn0fD2QRSM'
+
+// Pilih device iPhone acak tiap request biar UA gak selalu identik (bikin fingerprint
+// server lebih susah nge-flag pola "satu device spam banyak nomor").
+const DEVICE_IOS = [
+  'Apple-iPhone_13', 'Apple-iPhone_13_Pro', 'Apple-iPhone_14', 'Apple-iPhone_14_Pro',
+  'Apple-iPhone_15', 'Apple-iPhone_15_Pro', 'Apple-iPhone_12', 'Apple-iPhone_SE_3',
+]
+const IOS_VER = ['17.5.1', '17.6.1', '18.0', '18.1.1', '16.7.8']
+const acak = (arr) => arr[Math.floor(Math.random() * arr.length)]
+const buatUA = () => `WhatsApp/${WA_VERSION} iOS/${acak(IOS_VER)} Device/${acak(DEVICE_IOS)}`
+
+// Ambil daftar proxy HTTP dari raw GitHub (dikit aja utk tes). Bisa dioverride lewat
+// WA_PROXY (satu proxy manual, mis. http://ip:port) yang selalu diprioritaskan.
+const SUMBER_PROXY = [
+  'https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt',
+  'https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt',
+]
+const ambilProxyList = async (maksimal = 200) => {
+  const kumpulan = []
+  for (const url of SUMBER_PROXY) {
+    try {
+      const t = await (await fetch(url)).text()
+      for (const baris of t.trim().split(/\r?\n/)) {
+        const p = baris.trim()
+        if (/^\d{1,3}(\.\d{1,3}){3}:\d+$/.test(p)) kumpulan.push('http://' + p)
+      }
+    } catch { /* sumber mati, lanjut ke sumber berikutnya */ }
+    if (kumpulan.length >= maksimal * 3) break
+  }
+  // Acak lalu potong, biar tiap run nyoba proxy yang beda-beda.
+  for (let i = kumpulan.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[kumpulan[i], kumpulan[j]] = [kumpulan[j], kumpulan[i]]
+  }
+  return kumpulan.slice(0, maksimal)
+}
 
 const b64url = (a) => Buffer.from(a).toString('base64url')
 
@@ -47,7 +87,7 @@ const pisahNomor = (raw) => {
   return { cc, nomor: digits.slice(cc.length), sumber: 'tebakan (set WA_CC utk pasti)' }
 }
 
-const cek = async (number, method = 'sms') => {
+const cek = async (number, method = 'sms', opsi = {}) => {
   const digits = number.replace(/\D/g, '')
   if (digits.length < 8) return { status: 'invalid', reason: 'nomor kependekan' }
   const { cc, nomor, sumber } = pisahNomor(number)
@@ -76,8 +116,55 @@ const cek = async (number, method = 'sms') => {
     method,
   }
   const url = 'https://v.whatsapp.net/v2/code?' + new URLSearchParams(params).toString()
-  const res = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'text/json' } })
+  const fetchOpt = {
+    headers: { 'User-Agent': opsi.ua || buatUA(), Accept: 'text/json' },
+    signal: AbortSignal.timeout(opsi.timeout || 15000),
+  }
+  if (opsi.dispatcher) fetchOpt.dispatcher = opsi.dispatcher
+  const res = await fetch(url, fetchOpt)
   return res.json()
+}
+
+// Sekali hit, dari IP langsung (tanpa proxy).
+const cekLangsung = (number, method) => cek(number, method, { ua: buatUA() })
+
+// Hit via daftar proxy sampai dapat respons yang BUKAN rate-limit/blocked. Proxy publik
+// mayoritas mati/lambat, jadi kita coba banyak & ambil yang pertama kasih data valid.
+const cekViaProxy = async (number, method, daftarProxy) => {
+  let terakhir = null
+  for (const px of daftarProxy) {
+    try {
+      const dispatcher = new ProxyAgent(px)
+      const r = await cek(number, method, { dispatcher, timeout: 12000 })
+      terakhir = { ...r, _proxy: px }
+      const buruk = r.reason === 'no_routes' || r.reason === 'blocked' || r.status === 'invalid'
+      if (process.env.WA_DEBUG) console.log(`[proxy] ${px} -> reason=${r.reason || r.status}`)
+      if (!buruk) return { ...r, _proxy: px } // dapat cooldown asli (too_recent/incorrect dgn angka)
+    } catch (e) {
+      if (process.env.WA_DEBUG) console.log(`[proxy] ${px} gagal: ${e.code || e.message}`)
+    }
+  }
+  return terakhir // semua proxy gagal/kena rate-limit; balikin yang terakhir buat info
+}
+
+// Saring proxy: uji cepat paralel ke situs netral, ambil yang benar-benar hidup & bisa
+// HTTPS-tunnel. Tanpa ini kita buang waktu nyoba ratusan proxy mati satu per satu.
+const saringProxyHidup = async (daftar, target = 8) => {
+  const hidup = []
+  const batch = 40 // uji 40 sekaligus biar cepat
+  for (let i = 0; i < daftar.length && hidup.length < target; i += batch) {
+    const potongan = daftar.slice(i, i + batch)
+    await Promise.all(potongan.map(async (px) => {
+      if (hidup.length >= target) return
+      try {
+        const dispatcher = new ProxyAgent(px)
+        const r = await fetch('https://api.ipify.org', { dispatcher, signal: AbortSignal.timeout(7000) })
+        if (r.ok) hidup.push(px)
+      } catch { /* proxy mati */ }
+    }))
+    if (process.env.WA_DEBUG) console.log(`[saring] ${hidup.length} hidup dari ${Math.min(i + batch, daftar.length)} diuji`)
+  }
+  return hidup
 }
 
 const fmt = (d) => {
@@ -90,8 +177,38 @@ const fmt = (d) => {
 ;(async () => {
   const nomor = process.argv[2] || '+22378862602'
   const method = process.argv[3] || 'sms'
-  const r = await cek(nomor, method)
-  console.log('Nomor  :', nomor, '| versi:', WA_VERSION, '| method:', method)
+
+  // Mode proxy:
+  //   WA_PROXY=http://ip:port  -> pakai proxy itu saja (manual)
+  //   WA_USE_PROXY=1           -> auto ambil daftar proxy dari GitHub, coba satu per satu
+  //   (kosong)                 -> langsung dari IP sandbox
+  let r
+  let infoProxy = 'langsung (tanpa proxy)'
+  if (process.env.WA_PROXY) {
+    const px = process.env.WA_PROXY
+    infoProxy = 'manual ' + px
+    const dispatcher = new ProxyAgent(px)
+    try {
+      r = await cek(nomor, method, { dispatcher, timeout: 15000 })
+    } catch (e) {
+      r = { status: 'error', reason: 'proxy_gagal', detail: e.code || e.message }
+    }
+  } else if (process.env.WA_USE_PROXY) {
+    const poolSize = Number(process.env.WA_PROXY_POOL || 200)
+    process.stdout.write(`Ambil daftar proxy dari GitHub (pool ${poolSize})... `)
+    const daftar = await ambilProxyList(poolSize)
+    console.log(daftar.length + ' proxy mentah.')
+    process.stdout.write('Saring proxy yang hidup... ')
+    const hidup = await saringProxyHidup(daftar, Number(process.env.WA_PROXY_HIDUP || 8))
+    console.log(hidup.length + ' proxy hidup, mulai cek ke WhatsApp.')
+    r = await cekViaProxy(nomor, method, hidup)
+    if (r && r._proxy) infoProxy = 'proxy ' + r._proxy
+    if (!r) r = { status: 'error', reason: 'semua_proxy_gagal' }
+  } else {
+    r = await cekLangsung(nomor, method)
+  }
+
+  console.log('Nomor  :', nomor, '| versi:', WA_VERSION, '| via:', infoProxy)
   console.log('Respons:', JSON.stringify(r, null, 2))
   const artiReason = {
     too_recent: 'Nomor baru saja minta OTP, sedang cooldown (ini yang kita cari).',

@@ -21,8 +21,11 @@ boleh meminta kode OTP lagi (`sms_wait`, `voice_wait`, `retry_after`) beserta al
 
 ## Prasyarat
 
-- Node.js 18 atau lebih baru (butuh `fetch` bawaan).
-- Koneksi internet dari IP yang tidak sedang diblokir WhatsApp.
+- Node.js 18 atau lebih baru.
+- Paket `undici` (untuk dukungan proxy) — terpasang lewat `npm install`.
+- Koneksi internet dari IP yang tidak sedang diblokir WhatsApp. **IP datacenter/VPS
+  hampir selalu di-rem** (balas `no_routes 3600` seragam); untuk angka cooldown asli
+  pakai IP rumah/HP atau lewat proxy (lihat bagian Proxy di bawah).
 
 ## Instalasi
 
@@ -34,7 +37,7 @@ npm install
 ## Cara Pakai
 
 ```bash
-# Cek cooldown SMS (default)
+# Cek cooldown SMS (default) — langsung dari IP-mu
 node cek_wait.js +22378862602
 
 # Cek cooldown lewat voice call
@@ -47,22 +50,53 @@ WA_VERSION=2.26.33.73 node cek_wait.js +22378862602
 WA_CC=223 node cek_wait.js +22392909522
 ```
 
-### Contoh Keluaran
+## Proxy (untuk IP yang di-rem server)
+
+Kalau dari IP-mu selalu dapat `no_routes 3600` seragam, jalankan lewat proxy IP bersih.
+Ada dua mode:
+
+```bash
+# Mode 1: satu proxy manual (paling andal kalau punya proxy sendiri)
+WA_PROXY=http://ip:port node cek_wait.js +22378862602
+
+# Mode 2: auto — ambil daftar proxy publik dari GitHub, saring yang hidup,
+# lalu coba satu per satu sampai dapat data asli (bukan rate-limit)
+WA_USE_PROXY=1 node cek_wait.js +22378862602
+```
+
+Env tambahan untuk mode auto:
+
+| Env              | Default | Guna                                                  |
+|------------------|---------|-------------------------------------------------------|
+| `WA_PROXY_POOL`  | `200`   | Berapa proxy mentah diambil dari GitHub               |
+| `WA_PROXY_HIDUP` | `8`     | Berapa proxy hidup yang dikumpulkan sebelum hit WA    |
+| `WA_DEBUG`       | —       | Tampilkan proses saring & tiap percobaan proxy        |
+
+Catatan: proxy publik gratis mayoritas **mati/lambat**, jadi mode auto bisa perlu
+1-3 menit dan tidak dijamin dapat. Kalau butuh andal, sediakan `WA_PROXY` sendiri.
+Setiap request juga otomatis memakai **User-Agent device iOS acak** (model iPhone +
+versi iOS diacak) supaya fingerprint tidak selalu identik.
+
+### Contoh Keluaran (via proxy, cooldown asli terbaca)
 
 ```
-Nomor  : +22378862602 | versi: 2.26.33.73 | method: sms
+Nomor  : 23276808234 | versi: 2.26.33.73 | via: proxy http://189.51.168.164:999
 Respons: {
   "reason": "too_recent",
-  "sms_wait": 45015,
-  "voice_wait": -1,
-  "retry_after": 45015,
+  "sms_wait": 49118,
+  "voice_wait": 0,
+  "retry_after": 49118,
   "status": "fail"
 }
 ---
-sms_wait   : 12 jam 30 menit (45015 detik)
-voice_wait : tidak tersedia (method dinonaktifkan server)
-retry_after: 12 jam 30 menit (45015 detik)
+sms_wait   : 13 jam 38 menit (49118 detik)
+voice_wait : 0 (boleh minta OTP sekarang)
+retry_after: 13 jam 38 menit (49118 detik)
 ```
+
+Perhatikan `sms_wait` (49118) **beda** dari `voice_wait` (0) — inilah ciri cooldown
+asli. Kalau semua field sama persis (`3600`), itu placeholder rate-limit IP, bukan data
+nomor; script akan memberi PERINGATAN saat mendeteksinya.
 
 ---
 
