@@ -53,6 +53,23 @@ const ambilProxyList = async (maksimal = 200) => {
 
 const b64url = (a) => Buffer.from(a).toString('base64url')
 
+// Ambil daftar proxy OwlProxy (residential) dari file. Path lewat WA_OWL_FILE, default
+// owl_proxies.txt (satu URI per baris). OwlProxy pakai 1 endpoint utk http & socks5,
+// jadi socks5:// otomatis diubah ke http:// karena undici cuma dukung HTTP proxy.
+const fs = require('fs')
+const muatOwlProxy = () => {
+  const file = process.env.WA_OWL_FILE || 'owl_proxies.txt'
+  let isi
+  try { isi = fs.readFileSync(file, 'utf8') } catch { return [] }
+  const list = []
+  for (const baris of isi.trim().split(/\r?\n/)) {
+    const u = baris.trim()
+    if (!u || u.startsWith('#')) continue
+    list.push(u.replace(/^socks5:\/\//, 'http://'))
+  }
+  return list
+}
+
 const md5 = (s) => createHash('md5').update(s).digest('hex')
 // packageMD5 = md5(versi); token = md5(secret + packageMD5 + nomor_tanpa_cc)
 const buatToken = (nomor) => md5(WA_SECRET + md5(WA_VERSION) + nomor)
@@ -221,7 +238,16 @@ const fmt = (d) => {
   //   (kosong)                 -> langsung dari IP sandbox
   let r
   let infoProxy = 'langsung (tanpa proxy)'
-  if (process.env.WA_PROXY) {
+  const owl = process.env.WA_OWL ? muatOwlProxy() : []
+  if (owl.length) {
+    // Prioritas: proxy residential OwlProxy. Jauh lebih andal dari proxy publik --
+    // biasanya proxy pertama langsung dapat data asli.
+    const lebar = Number(process.env.WA_PROXY_LEBAR || 10)
+    console.log(`Pakai OwlProxy residential: ${owl.length} proxy (balapan ${lebar})...`)
+    r = await cekBalapan(nomor, method, owl, lebar)
+    if (r && r._proxy) infoProxy = 'owl ' + r._proxy.replace(/\/\/[^@]+@/, '//***@')
+    if (!r) r = { status: 'error', reason: 'semua_owl_gagal' }
+  } else if (process.env.WA_PROXY) {
     const px = process.env.WA_PROXY
     infoProxy = 'manual ' + px
     const dispatcher = new ProxyAgent(px)
